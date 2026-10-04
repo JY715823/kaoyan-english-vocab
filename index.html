@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#eafaf4" />
+<title>英语词句本 · 背单词</title>
+<style>
+  :root {
+    --teal: #12897a; --teal-d: #0b6157; --teal-l: #16a08d;
+    --green: #21b07a; --green-d: #159a68;
+    --red: #f2765a; --red-d: #e2603f;
+    --amber: #eaa640; --blue: #4a90d9;
+    --ink: #1d3a3d; --ink-2: #557073; --muted: #8aa0a2;
+    --line: #dfeae7; --card: #ffffff; --bg: #f2f8f5;
+    --tier-forgotten: #e2603f; --tier-vague: #d99a2b; --tier-solid: #2aa06f;
+    --radius: 18px;
+    --shadow: 0 8px 30px rgba(18,137,122,.10);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+    background-image: linear-gradient(180deg, #e9fbf3 0%, #f4f8ef 42%, #f7f4ec 100%);
+    background-attachment: fixed; min-height: 100vh; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 560px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column;
+         padding: calc(10px + var(--safe-t)) 14px calc(16px + var(--safe-b)); }
+  /* top bar */
+  .topbar { display: flex; align-items: center; gap: 10px; }
+  .brand { display: flex; flex-direction: column; line-height: 1.15; margin-right: auto; }
+  .brand b { font-size: 1.02rem; color: var(--teal-d); letter-spacing: .5px; }
+  .brand small { font-size: .68rem; color: var(--muted); }
+  .icon-btn { width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(255,255,255,.7); color: var(--teal-d); display: grid; place-items: center; cursor: pointer; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  /* segmented view switch */
+  .seg { display: inline-flex; background: rgba(255,255,255,.7); border: 1px solid var(--line);
+    border-radius: 12px; padding: 3px; gap: 3px; }
+  .seg button { border: 0; background: none; padding: 6px 14px; border-radius: 9px; font-size: .82rem;
+    color: var(--ink-2); cursor: pointer; font-weight: 600; }
+  .seg button.on { background: var(--teal); color: #fff; box-shadow: 0 2px 8px rgba(18,137,122,.3); }
+  /* stats strip */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 10px;
+    background: rgba(255,255,255,.55); border: 1px solid var(--line); border-radius: 14px; padding: 12px 8px; }
+  .stat { text-align: center; }
+  .stat .k { font-size: .72rem; color: var(--muted); }
+  .stat .v { font-size: 1.18rem; font-weight: 800; color: var(--ink); margin-top: 2px; }
+  .stat .v em { font-style: normal; color: var(--muted); font-size: .8rem; font-weight: 600; }
+  .progress { height: 6px; border-radius: 6px; background: #e4efeb; overflow: hidden; margin-bottom: 14px; }
+  .progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--teal-l), var(--green)); transition: width .3s; }
+  /* card */
+  .stage { flex: 1; display: flex; flex-direction: column; }
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    border: 1px solid var(--line); padding: 22px 20px; min-height: 300px; display: flex; flex-direction: column;
+    cursor: pointer; position: relative; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+  .badge { font-size: .66rem; padding: 3px 8px; border-radius: 999px; font-weight: 700; letter-spacing: .3px; }
+  .badge.kind { background: #e7f4f0; color: var(--teal-d); }
+  .badge.tier-forgotten { background: #fdece6; color: var(--tier-forgotten); }
+  .badge.tier-vague { background: #fbf1de; color: #b9791a; }
+  .badge.tier-solid { background: #e6f5ec; color: var(--tier-solid); }
+  .badge.art { background: #eef1f4; color: #7b8794; font-weight: 600; }
+  .term { font-size: 2.05rem; font-weight: 800; color: var(--ink); line-height: 1.22; word-break: break-word;
+    margin: 6px 0 2px; }
+  .term.small { font-size: 1.4rem; }
+  .hint { margin-top: auto; text-align: center; color: var(--muted); font-size: .82rem; padding-top: 20px; }
+  .hint b { color: var(--teal); font-weight: 700; }
+  .back { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 14px; }
+  .meaning { font-size: 1.02rem; color: var(--ink); line-height: 1.62; }
+  .meaning .pos { color: var(--teal); font-weight: 700; margin-right: 4px; }
+  .sec { margin-top: 14px; }
+  .sec h4 { font-size: .74rem; color: var(--muted); margin: 0 0 5px; font-weight: 700; letter-spacing: .4px; }
+  .ex { font-size: .86rem; color: var(--ink-2); border-left: 3px solid #bfe0d7; padding: 2px 0 2px 10px; margin: 6px 0; }
+  .ex mark { background: #fff2c9; color: var(--ink); padding: 0 2px; border-radius: 3px; }
+  .weak { font-size: .84rem; color: var(--red-d); background: #fdece6; border-radius: 10px; padding: 8px 10px; margin-top: 12px; }
+  .weak b { color: var(--red-d); }
+  .srcline { font-size: .72rem; color: var(--muted); margin-top: 10px; }
+  /* grade buttons */
+  .grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+  .grades button { border: 0; border-radius: 14px; padding: 14px 4px; font-size: .92rem; font-weight: 800;
+    color: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 2px; align-items: center; }
+  .grades button span { font-size: .64rem; font-weight: 600; opacity: .9; }
+  .g-again { background: var(--red); } .g-hard { background: var(--amber); }
+  .g-good { background: var(--green); } .g-easy { background: var(--blue); }
+  .grades button:active { transform: translateY(1px); }
+  .reveal-btn { margin-top: 16px; width: 100%; border: 0; border-radius: 14px; padding: 15px; font-size: 1rem;
+    font-weight: 800; color: #fff; background: var(--green); cursor: pointer; }
+  .reveal-btn.alt { background: var(--red); }
+  .undo { position: absolute; top: 14px; right: 14px; font-size: .72rem; color: var(--muted); background: none;
+    border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; cursor: pointer; }
+  /* empty / done */
+  .done { text-align: center; padding: 40px 20px; }
+  .done .big { font-size: 2.4rem; } .done h3 { color: var(--teal-d); margin: 8px 0 4px; }
+  .done p { color: var(--ink-2); font-size: .9rem; }
+  .done .row { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
+  .ghost-btn { border: 1px solid var(--teal); color: var(--teal-d); background: #fff; border-radius: 12px;
+    padding: 10px 18px; font-weight: 700; cursor: pointer; font-size: .9rem; }
+  /* list view */
+  .toolbar { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; flex-wrap: wrap; }
+  .search { flex: 1; min-width: 160px; display: flex; align-items: center; gap: 8px; background: #fff;
+    border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; }
+  .search input { border: 0; outline: 0; width: 100%; font: inherit; background: none; color: var(--ink); }
+  .search svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+  .chip { border: 1px solid var(--line); background: #fff; color: var(--ink-2); border-radius: 999px;
+    padding: 6px 12px; font-size: .78rem; cursor: pointer; font-weight: 600; }
+  .chip.on { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .lcard { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 13px 15px; }
+  .lcard .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .lcard .t { font-size: 1.12rem; font-weight: 800; color: var(--ink); word-break: break-word; }
+  .lcard .m { color: var(--ink-2); font-size: .9rem; margin-top: 5px; }
+  .lcard .m.masked { color: var(--muted); }
+  .lcard .foot { display: flex; gap: 8px; align-items: center; margin-top: 9px; font-size: .7rem; color: var(--muted); flex-wrap: wrap; }
+  .lcard .next { margin-left: auto; }
+  .lcard .next.due { color: var(--red-d); font-weight: 700; }
+  .grp-h { font-size: .8rem; color: var(--teal-d); font-weight: 800; margin: 16px 2px 6px; display: flex; gap: 8px; align-items: center; }
+  .grp-h small { color: var(--muted); font-weight: 600; }
+  /* modal */
+  .mask { position: fixed; inset: 0; background: rgba(20,40,40,.42); display: none; align-items: flex-end; justify-content: center; z-index: 40; }
+  .mask.on { display: flex; }
+  .sheet { background: #fff; width: 100%; max-width: 560px; border-radius: 22px 22px 0 0; padding: 20px 20px calc(24px + var(--safe-b)); max-height: 88vh; overflow-y: auto; }
+  .sheet h3 { margin: 0 0 4px; color: var(--teal-d); font-size: 1.1rem; }
+  .sheet .sub { color: var(--muted); font-size: .78rem; margin-bottom: 16px; }
+  .field { margin-bottom: 18px; }
+  .field > label { font-size: .82rem; font-weight: 700; color: var(--ink); display: block; margin-bottom: 8px; }
+  .field .desc { font-size: .72rem; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .opt { border: 1px solid var(--line); background: #f7faf9; border-radius: 12px; padding: 9px 14px; cursor: pointer; font-size: .86rem; color: var(--ink-2); font-weight: 600; }
+  .opt.on { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .num { width: 84px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: .92rem; text-align: center; }
+  .switches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sheet .close { margin-top: 8px; width: 100%; border: 0; border-radius: 14px; padding: 14px; background: var(--teal); color: #fff; font-weight: 800; font-size: 1rem; cursor: pointer; }
+  .danger { width: 100%; border: 1px solid #f0c9bd; background: #fdece6; color: var(--red-d); border-radius: 12px; padding: 11px; font-weight: 700; cursor: pointer; font-size: .86rem; }
+  .xfer { width: 100%; height: 84px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: .72rem; color: var(--ink-2); resize: vertical; background: #f7faf9; }
+  .row2 { display: flex; gap: 8px; margin-top: 8px; }
+  .ghost-btn.small { padding: 8px 14px; font-size: .8rem; }
+  .foot-note { text-align: center; color: var(--muted); font-size: .68rem; padding: 14px 0 4px; }
+  .hidden { display: none !important; }
+  @media (min-width: 600px) { .term { font-size: 2.3rem; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><b>英语词句本</b><small>英语二 · 阅读收尾积累</small></div>
+    <div class="seg" id="seg">
+      <button data-view="study" class="on">背词</button>
+      <button data-view="list">词本</button>
+    </div>
+    <button class="icon-btn" id="gear" title="设置" aria-label="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.35.4.64.73.83"/></svg>
+    </button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">今日复习</div><div class="v" id="sReview">0<em>/0</em></div></div>
+    <div class="stat"><div class="k">今日新词</div><div class="v" id="sNew">0<em>/0</em></div></div>
+    <div class="stat"><div class="k">学习时间</div><div class="v" id="sTime">0<em>min</em></div></div>
+  </div>
+  <div class="progress"><i id="bar"></i></div>
+
+  <div class="stage" id="studyView"></div>
+  <div class="stage hidden" id="listView">
+    <div class="toolbar">
+      <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="搜索单词、短语或释义" /></label>
+      <button class="chip" id="hideM">隐藏释义</button>
+    </div>
+    <div class="toolbar" id="filters">
+      <button class="chip on" data-fk="all">全部</button>
+      <button class="chip" data-fk="word">词汇</button>
+      <button class="chip" data-fk="phrase">短语</button>
+      <button class="chip" data-fk="sentence_pattern">句型</button>
+      <button class="chip" data-fk="due">今日待复习</button>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <div class="foot-note" id="footNote"></div>
+</div>
+
+<!-- settings sheet -->
+<div class="mask" id="mask">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <h3>设置任务量</h3>
+    <div class="sub">记忆曲线在本机浏览器计算与保存，不上传；项目端只负责追加新词。</div>
+
+    <div class="field">
+      <label>复习 : 新词 比例<span class="desc">每背 1 个新词，搭配多少张到期复习</span></label>
+      <div class="opts" id="ratioOpts">
+        <div class="opt" data-r="0">纯新词</div>
+        <div class="opt" data-r="1">1 : 1</div>
+        <div class="opt" data-r="2">2 : 1</div>
+        <div class="opt" data-r="3">3 : 1</div>
+        <div class="opt" data-r="4">4 : 1</div>
+        <div class="opt" data-r="null">纯复习</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>每日新词上限</label>
+      <input class="num" type="number" id="newCap" min="0" max="200" />
+    </div>
+    <div class="field">
+      <label>每日复习上限</label>
+      <input class="num" type="number" id="revCap" min="0" max="600" />
+    </div>
+
+    <div class="field">
+      <label>背诵词类</label>
+      <div class="switches" id="kindOpts">
+        <div class="opt" data-k="word">词汇</div>
+        <div class="opt" data-k="phrase">短语</div>
+        <div class="opt" data-k="sentence_pattern">句型</div>
+      </div>
+    </div>
+
+    <button class="danger" id="resetBtn">清空本机背诵进度</button>
+
+    <div class="field" style="margin-top:16px">
+      <label>迁移进度<span class="desc">换手机/换链接时，在旧页面导出、新页面导入</span></label>
+      <textarea class="xfer" id="xfer" placeholder="点「导出进度」后全选复制；导入时粘贴到这里再点「导入进度」"></textarea>
+      <div class="row2">
+        <button class="ghost-btn small" id="expBtn">导出进度</button>
+        <button class="ghost-btn small" id="impBtn">导入进度</button>
+      </div>
+    </div>
+
+    <button class="close" id="closeSheet">完成设置</button>
+  </div>
+</div>
+
+<script src="vocab-data.js"></script>
+<script src="fsrs.js"></script>
+<script>
+(function () {
+  "use strict";
+  var DATA = window.__VOCAB_DATA__ || { words: [], stats: {}, generated_at: "" };
+  var WORDS = DATA.words || [];
+  var F = window.FsrsLib;
+  var KIND_LABEL = { word: "词汇", phrase: "短语", sentence_pattern: "句型" };
+  var SRC_LABEL = { source_explanation: "解析明确", user_translation_issue: "译文暴露", agent_important: "建议积累" };
+  var DAY = 86400000;
+
+  // ---- storage (graceful in-memory fallback if blocked) ----
+  var mem = {};
+  function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return k in mem ? mem[k] : null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { mem[k] = v; } }
+  var K_CARD = "ky.vocab.cards.v1", K_SET = "ky.vocab.settings.v1", K_DAY = "ky.vocab.daily.v1";
+
+  var DEFAULTS = { ratio: 3, newCap: 20, revCap: 150, kinds: { word: true, phrase: true, sentence_pattern: true } };
+  var settings = Object.assign({}, DEFAULTS, lsGet(K_SET) || {});
+  settings.kinds = Object.assign({}, DEFAULTS.kinds, settings.kinds || {});
+
+  var cards = lsGet(K_CARD) || {};   // id -> fsrs card
+  var now = Date.now();
+  var dayKey = localDay(now);
+
+  var daily = lsGet(K_DAY) || {};
+  if (daily.date !== dayKey) { daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0 }; lsSet(K_DAY, daily); }
+  daily.done = daily.done || {};
+
+  function localDay(ms) { var d = new Date(ms); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function saveSettings() { lsSet(K_SET, settings); }
+
+  // ---- import seeds for any word not yet tracked ----
+  (function importSeeds() {
+    var changed = false;
+    WORDS.forEach(function (w) {
+      if (!cards[w.id]) { cards[w.id] = F.fromSeed(w.seed, now); changed = true; }
+    });
+    if (changed) lsSet(K_CARD, cards);
+  })();
+
+  function byId(id) { for (var i = 0; i < WORDS.length; i++) if (WORDS[i].id === id) return WORDS[i]; return null; }
+  function kindOn(id) { var w = byId(id); return w && settings.kinds[w.kind]; }
+  function isDue(card, t) { return card.state !== F.State.New && card.due <= t; }
+
+  // ---- build today's session queue honoring ratio + caps ----
+  function buildQueue() {
+    var review = [], news = [];
+    WORDS.forEach(function (w) {
+      if (!settings.kinds[w.kind]) return;
+      var c = cards[w.id]; if (!c) return;
+      if (daily.done[w.id]) return;               // once per day
+      if (c.state === F.State.New) news.push(w);
+      else if (isDue(c, now)) review.push(w);
+    });
+    review.sort(function (a, b) { return cards[a.id].due - cards[b.id].due || a.priority - b.priority; });
+    news.sort(function (a, b) { return a.priority - b.priority || (b.learned_on || "").localeCompare(a.learned_on || ""); });
+
+    var nNew, nRev;
+    if (settings.ratio === null) { nNew = 0; nRev = Math.min(review.length, settings.revCap); }
+    else if (settings.ratio === 0) { nRev = 0; nNew = Math.min(news.length, settings.newCap); }
+    else { nNew = Math.min(news.length, settings.newCap); nRev = Math.min(review.length, settings.newCap * settings.ratio, settings.revCap); }
+    var rev = review.slice(0, nRev), nw = news.slice(0, nNew);
+
+    var queue = [], ri = 0, ni = 0, r = settings.ratio || 0;
+    while (ri < rev.length || ni < nw.length) {
+      if (r > 0) {
+        var take = r;
+        while (take-- > 0 && ri < rev.length) queue.push({ id: rev[ri++].id, type: "review" });
+        if (ni < nw.length) queue.push({ id: nw[ni++].id, type: "new" });
+      } else if (settings.ratio === null) {
+        queue.push({ id: rev[ri++].id, type: "review" });
+      } else { // 纯新词
+        queue.push({ id: nw[ni++].id, type: "new" });
+      }
+    }
+    return { queue: queue, reviewTotal: rev.length, newTotal: nw.length };
+  }
+
+  var session = buildQueue();
+  var qi = 0, revealed = false, lastGraded = null;
+  var timerStart = null;
+
+  // ---- rendering ----
+  var $ = function (s) { return document.querySelector(s); };
+  var studyView = $("#studyView");
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+  function highlight(sentence, term) {
+    var safe = esc(sentence);
+    try {
+      var t = String(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      // strip CJK gloss in parentheses from pattern terms before matching
+      t = t.split("（")[0].trim();
+      if (!t) return safe;
+      safe = safe.replace(new RegExp("(" + t + ")", "ig"), "<mark>$1</mark>");
+    } catch (e) {}
+    return safe;
+  }
+
+  function updateStats() {
+    var total = session.queue.length;
+    var done = Object.keys(daily.done).filter(function (id) { return kindOn(id); }).length;
+    $("#sReview").innerHTML = (daily.reviewDone) + "<em>/" + session.reviewTotal + "</em>";
+    $("#sNew").innerHTML = (daily.newDone) + "<em>/" + session.newTotal + "</em>";
+    var secs = daily.seconds + (timerStart ? Math.floor((Date.now() - timerStart) / 1000) : 0);
+    var mins = Math.floor(secs / 60);
+    $("#sTime").innerHTML = (mins > 0 ? mins : secs) + "<em>" + (mins > 0 ? "min" : "s") + "</em>";
+    var pct = total ? Math.min(100, Math.round(done / total * 100)) : (done > 0 ? 100 : 0);
+    $("#bar").style.width = pct + "%";
+  }
+
+  function renderStudy() {
+    if (qi >= session.queue.length) { renderDone(); return; }
+    var item = session.queue[qi];
+    var w = byId(item.id); var c = cards[w.id];
+    if (!timerStart) timerStart = Date.now();
+    var termClass = w.kind !== "word" ? "term small" : "term";
+    var html =
+      '<div class="card" id="card">' +
+        (lastGraded ? '<button class="undo" id="undo">撤销</button>' : '') +
+        '<div class="badges">' +
+          '<span class="badge kind">' + KIND_LABEL[w.kind] + '</span>' +
+          '<span class="badge tier-' + w.tier + '">' + w.tier_label + '</span>' +
+          (w.articles && w.articles[0] ? '<span class="badge art">' + esc(shortArt(w.articles[0])) + '</span>' : '') +
+        '</div>' +
+        '<div class="' + termClass + '">' + esc(w.term) + '</div>' +
+        (revealed ? renderBack(w) : '<div class="hint">尝试回想释义<br><b>点击卡片查看</b></div>') +
+      '</div>' +
+      (revealed ? gradeBar() : '<button class="reveal-btn" id="reveal">显示释义</button>');
+    studyView.innerHTML = html;
+    var card = $("#card");
+    if (card && !revealed) card.addEventListener("click", function () { revealed = true; renderStudy(); });
+    var rv = $("#reveal"); if (rv) rv.addEventListener("click", function () { revealed = true; renderStudy(); });
+    var un = $("#undo"); if (un) un.addEventListener("click", undo);
+    if (revealed) bindGrades();
+    updateStats();
+  }
+
+  function renderBack(w) {
+    var pos = ""; var meaning = w.meaning || "暂无释义";
+    var m = meaning.match(/^\s*([a-z]+\.)\s*/i); if (m) { pos = m[1]; meaning = meaning.slice(m[0].length); }
+    var html = '<div class="back"><div class="meaning">' + (pos ? '<span class="pos">' + esc(pos) + '</span>' : '') + esc(meaning) + '</div>';
+    if (w.examples && w.examples.length) {
+      html += '<div class="sec"><h4>真题例句</h4>';
+      w.examples.slice(0, 2).forEach(function (e) { html += '<div class="ex">' + highlight(e, w.term) + '</div>'; });
+      html += '</div>';
+    }
+    if (w.weak_point) html += '<div class="weak"><b>易错点</b> · ' + esc(w.weak_point) + '</div>';
+    var srcs = (w.sources || []).map(function (s) { return SRC_LABEL[s] || s; }).join(" · ");
+    html += '<div class="srcline">来源：' + esc(srcs || "积累") + ' · 收录 ' + esc(w.learned_on || "—") + '</div></div>';
+    return html;
+  }
+
+  function gradeBar() {
+    return '<div class="grades">' +
+      '<button class="g-again" data-g="1">不认识<span>Again</span></button>' +
+      '<button class="g-hard" data-g="2">模糊<span>Hard</span></button>' +
+      '<button class="g-good" data-g="3">认识<span>Good</span></button>' +
+      '<button class="g-easy" data-g="4">简单<span>Easy</span></button></div>';
+  }
+
+  function bindGrades() {
+    studyView.querySelectorAll(".grades button").forEach(function (b) {
+      b.addEventListener("click", function () { grade(parseInt(b.getAttribute("data-g"), 10)); });
+    });
+  }
+
+  function grade(rating) {
+    var item = session.queue[qi]; var w = byId(item.id);
+    var before = cards[w.id]; var wasNew = before.state === F.State.New;
+    var next = F.grade(before, rating, now);
+    lastGraded = { id: w.id, prev: before, wasNew: wasNew, type: item.type };
+    cards[w.id] = next; lsSet(K_CARD, cards);
+    daily.done[w.id] = true;
+    if (wasNew) daily.newDone++; else daily.reviewDone++;
+    daily.seconds += Math.floor((Date.now() - (timerStart || Date.now())) / 1000); timerStart = Date.now();
+    lsSet(K_DAY, daily);
+    qi++; revealed = false;
+    renderStudy();
+  }
+
+  function undo() {
+    if (!lastGraded) return;
+    var g = lastGraded;
+    cards[g.id] = g.prev; lsSet(K_CARD, cards);
+    delete daily.done[g.id];
+    if (g.wasNew) daily.newDone = Math.max(0, daily.newDone - 1); else daily.reviewDone = Math.max(0, daily.reviewDone - 1);
+    lsSet(K_DAY, daily);
+    qi = Math.max(0, qi - 1); revealed = false; lastGraded = null;
+    renderStudy();
+  }
+
+  function renderDone() {
+    if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = null; lsSet(K_DAY, daily); }
+    var remain = countTomorrow();
+    studyView.innerHTML = '<div class="done"><div class="big">🎉</div><h3>今日任务已完成</h3>' +
+      '<p>复习 ' + daily.reviewDone + ' 个 · 新词 ' + daily.newDone + ' 个</p>' +
+      '<p style="margin-top:6px">明天约 ' + remain + ' 张到期，届时打开即可继续。</p>' +
+      '<div class="row"><button class="ghost-btn" id="goList">去词本浏览</button>' +
+      '<button class="ghost-btn" id="moreStudy">再背几个</button></div></div>';
+    $("#goList").addEventListener("click", function () { switchView("list"); });
+    $("#moreStudy").addEventListener("click", function () { session = buildQueue(); qi = 0; revealed = false; renderStudy(); });
+    updateStats();
+  }
+
+  function countTomorrow() {
+    var t = now + DAY, n = 0;
+    WORDS.forEach(function (w) { if (!settings.kinds[w.kind]) return; var c = cards[w.id]; if (c && c.state !== F.State.New && c.due <= t) n++; });
+    return n;
+  }
+
+  function shortArt(a) { return a.length > 18 ? a.slice(0, 18) + "…" : a; }
+
+  // ---- list view ----
+  var listEl = $("#list");
+  function renderList() {
+    var q = ($("#q").value || "").trim().toLowerCase();
+    var fk = currentFilter;
+    var hideM = $("#hideM").classList.contains("on");
+    function match(w) {
+      if (fk === "word" || fk === "phrase" || fk === "sentence_pattern") { if (w.kind !== fk) return false; }
+      if (fk === "due") { var c = cards[w.id]; if (!c || !isDue(c, now)) return false; }
+      if (q && !(w.term.toLowerCase().includes(q) || (w.meaning || "").toLowerCase().includes(q))) return false;
+      return true;
+    }
+    var items = WORDS.filter(match);
+    // group by article (first article) to mirror the project page
+    var groups = {}, order = [];
+    items.forEach(function (w) {
+      var key = (w.articles && w.articles[0]) || "其它";
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(w);
+    });
+    var html = "";
+    if (!items.length) html = '<div class="done"><p>' + (q || fk !== "all" ? "没有匹配的词句。" : "词本还是空的，去项目里背完一篇英语阅读后收尾即可积累。") + '</p></div>';
+    order.forEach(function (key) {
+      var ws = groups[key];
+      html += '<div class="grp-h">' + esc(key) + ' <small>' + ws.length + ' 条</small></div>';
+      ws.forEach(function (w) {
+        var c = cards[w.id]; var nextTxt = "新词", dueCls = "";
+        if (c && c.state !== F.State.New) {
+          var d = new Date(c.due);
+          if (isDue(c, now)) { nextTxt = "待复习"; dueCls = " due"; }
+          else nextTxt = "下次 " + (d.getMonth() + 1) + "/" + d.getDate();
+        }
+        html += '<div class="lcard"><div class="top"><span class="t">' + esc(w.term) + '</span>' +
+          '<span class="badge tier-' + w.tier + '">' + w.tier_label + '</span></div>' +
+          '<div class="m' + (hideM ? " masked" : "") + '">' + (hideM ? "••••••" : esc(w.meaning || "暂无释义")) + '</div>' +
+          '<div class="foot"><span class="badge kind">' + KIND_LABEL[w.kind] + '</span>' +
+          '<span class="next' + dueCls + '">' + nextTxt + '</span></div></div>';
+      });
+    });
+    listEl.innerHTML = html;
+  }
+  var currentFilter = "all";
+
+  // ---- view switch ----
+  function switchView(v) {
+    document.querySelectorAll("#seg button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-view") === v); });
+    $("#studyView").classList.toggle("hidden", v !== "study");
+    $("#listView").classList.toggle("hidden", v !== "list");
+    if (v === "list") renderList(); else { session = buildQueue(); qi = 0; revealed = false; renderStudy(); }
+  }
+  document.querySelectorAll("#seg button").forEach(function (b) {
+    b.addEventListener("click", function () { switchView(b.getAttribute("data-view")); });
+  });
+
+  // ---- settings sheet ----
+  var mask = $("#mask");
+  function openSheet() { syncSheet(); mask.classList.add("on"); }
+  function closeSheet() { mask.classList.remove("on"); saveSettings(); session = buildQueue(); qi = 0; revealed = false; renderStudy(); }
+  function syncSheet() {
+    document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
+      var r = o.getAttribute("data-r"); var val = r === "null" ? null : parseInt(r, 10);
+      o.classList.toggle("on", settings.ratio === val);
+    });
+    document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
+      o.classList.toggle("on", !!settings.kinds[o.getAttribute("data-k")]);
+    });
+    $("#newCap").value = settings.newCap; $("#revCap").value = settings.revCap;
+  }
+  $("#gear").addEventListener("click", openSheet);
+  $("#closeSheet").addEventListener("click", closeSheet);
+  mask.addEventListener("click", function (e) { if (e.target === mask) closeSheet(); });
+  document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
+    o.addEventListener("click", function () { var r = o.getAttribute("data-r"); settings.ratio = r === "null" ? null : parseInt(r, 10); syncSheet(); });
+  });
+  document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
+    o.addEventListener("click", function () { var k = o.getAttribute("data-k"); settings.kinds[k] = !settings.kinds[k]; syncSheet(); });
+  });
+  $("#newCap").addEventListener("input", function () { settings.newCap = Math.max(0, parseInt(this.value || "0", 10) || 0); });
+  $("#revCap").addEventListener("input", function () { settings.revCap = Math.max(0, parseInt(this.value || "0", 10) || 0); });
+  $("#resetBtn").addEventListener("click", function () {
+    if (!confirm("确定清空本机背诵进度？词表仍会保留，只是重新开始记忆曲线。")) return;
+    cards = {}; lsSet(K_CARD, {}); daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0 }; lsSet(K_DAY, daily);
+    importSeedsNow(); closeSheet();
+  });
+  function importSeedsNow() { WORDS.forEach(function (w) { if (!cards[w.id]) cards[w.id] = F.fromSeed(w.seed, Date.now()); }); lsSet(K_CARD, cards); }
+
+  // progress transfer (origin migration)
+  $("#expBtn").addEventListener("click", function () {
+    if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = Date.now(); lsSet(K_DAY, daily); }
+    var box = $("#xfer");
+    box.value = JSON.stringify({ v: 1, exported_at: new Date().toISOString(), cards: cards, daily: daily });
+    box.select();
+    try { document.execCommand("copy"); } catch (e) {}
+  });
+  $("#impBtn").addEventListener("click", function () {
+    try {
+      var d = JSON.parse($("#xfer").value);
+      if (!d || !d.cards || typeof d.cards !== "object") throw new Error("bad payload");
+      cards = d.cards; lsSet(K_CARD, cards);
+      if (d.daily && d.daily.date === dayKey) { daily = d.daily; daily.done = daily.done || {}; lsSet(K_DAY, daily); }
+      importSeedsNow();
+      session = buildQueue(); qi = 0; revealed = false; lastGraded = null;
+      $("#xfer").value = "已导入 ✓ 共 " + Object.keys(cards).length + " 张卡片";
+      renderStudy();
+    } catch (e) {
+      $("#xfer").value = "导入失败：粘贴的内容不是本页导出的进度";
+    }
+  });
+
+  // ---- list controls ----
+  $("#q").addEventListener("input", renderList);
+  $("#hideM").addEventListener("click", function () { this.classList.toggle("on"); this.textContent = this.classList.contains("on") ? "显示释义" : "隐藏释义"; renderList(); });
+  document.querySelectorAll("#filters .chip").forEach(function (c) {
+    c.addEventListener("click", function () {
+      document.querySelectorAll("#filters .chip").forEach(function (x) { x.classList.remove("on"); });
+      c.classList.add("on"); currentFilter = c.getAttribute("data-fk"); renderList();
+    });
+  });
+
+  // ---- footer ----
+  var gen = DATA.generated_at ? new Date(DATA.generated_at) : null;
+  $("#footNote").textContent = "共 " + WORDS.length + " 条 · 数据更新 " + (gen ? gen.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "—") +
+    " · 进度仅存本机";
+
+  // live timer tick
+  setInterval(function () { if (timerStart) updateStats(); }, 1000);
+
+  switchView("study");
+})();
+</script>
+</body>
+</html>
