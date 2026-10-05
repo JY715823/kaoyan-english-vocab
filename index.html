@@ -262,8 +262,9 @@
   var dayKey = localDay(now);
 
   var daily = lsGet(K_DAY) || {};
-  if (daily.date !== dayKey) { daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0 }; lsSet(K_DAY, daily); }
+  if (daily.date !== dayKey) { daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0, finished: false }; lsSet(K_DAY, daily); }
   daily.done = daily.done || {};
+  daily.finished = !!daily.finished;   // sticky until the next local day or a settings change
 
   function localDay(ms) { var d = new Date(ms); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -317,6 +318,7 @@
   var session = buildQueue();
   var qi = 0, revealed = false, lastGraded = null;
   var timerStart = null;
+  var goodDone = {};   // ids that already got their one confirmation requeue this session
 
   // ---- rendering ----
   var $ = function (s) { return document.querySelector(s); };
@@ -347,7 +349,7 @@
   }
 
   function renderStudy() {
-    if (qi >= session.queue.length) { renderDone(); return; }
+    if (daily.finished || qi >= session.queue.length) { renderDone(); return; }
     var item = session.queue[qi];
     var w = byId(item.id); var c = cards[w.id];
     if (!timerStart) timerStart = Date.now();
@@ -402,20 +404,31 @@
     });
   }
 
+  // In-session re-exposure steps (Anki/扇贝 learning-steps style):
+  // Again -> back in ~4 cards (repeatable while it keeps failing);
+  // Hard  -> back in ~8 cards; Good -> one confirmation pass ~12 cards later;
+  // Easy  -> done for the session. FSRS still records every grade for the long curve.
   function grade(rating) {
     var item = session.queue[qi]; var w = byId(item.id);
     var before = cards[w.id]; var wasNew = before.state === F.State.New;
     var next = F.grade(before, rating, now);
-    // 扇贝式：不认识/模糊 本场稍后再考，直到认识才结算；认识/简单 记为今日完成。
-    var completed = (rating === F.Rating.Good || rating === F.Rating.Easy);
-    lastGraded = { id: w.id, prev: before, wasNew: wasNew, type: item.type, completed: completed };
     cards[w.id] = next; lsSet(K_CARD, cards);
-    if (completed) {
-      daily.done[w.id] = true;
+    var completed = (rating === F.Rating.Good || rating === F.Rating.Easy);
+    var incremented = false;
+    if (completed && !daily.done[w.id]) {
+      daily.done[w.id] = true; incremented = true;
       if (wasNew) daily.newDone++; else daily.reviewDone++;
-    } else {
-      session.queue.push({ id: w.id, type: item.type, repeat: true });
     }
+    var entry = null;
+    var gap = rating === F.Rating.Again ? 4 : rating === F.Rating.Hard ? 8
+            : (rating === F.Rating.Good && !goodDone[w.id]) ? (goodDone[w.id] = true, 12) : 0;
+    if (gap) {
+      var at = Math.max(qi + 1, Math.min(session.queue.length, qi + gap));
+      entry = { id: w.id, type: item.type, repeat: true };
+      session.queue.splice(at, 0, entry);
+    }
+    lastGraded = { id: w.id, prev: before, wasNew: wasNew, completed: completed,
+                   incremented: incremented, entry: entry };
     daily.seconds += Math.floor((Date.now() - (timerStart || Date.now())) / 1000); timerStart = Date.now();
     lsSet(K_DAY, daily);
     qi++; revealed = false;
@@ -426,21 +439,20 @@
     if (!lastGraded) return;
     var g = lastGraded;
     cards[g.id] = g.prev; lsSet(K_CARD, cards);
-    if (g.completed) {
+    if (g.incremented) {
       delete daily.done[g.id];
       if (g.wasNew) daily.newDone = Math.max(0, daily.newDone - 1); else daily.reviewDone = Math.max(0, daily.reviewDone - 1);
-    } else {
-      for (var i = session.queue.length - 1; i >= qi; i--) {
-        if (session.queue[i] && session.queue[i].id === g.id) { session.queue.splice(i, 1); break; }
-      }
     }
+    if (g.entry) { var idx = session.queue.indexOf(g.entry); if (idx >= 0) session.queue.splice(idx, 1); }
+    if (g.completed) delete goodDone[g.id];
     lsSet(K_DAY, daily);
     qi = Math.max(0, qi - 1); revealed = false; lastGraded = null;
     renderStudy();
   }
 
   function renderDone() {
-    if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = null; lsSet(K_DAY, daily); }
+    if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = null; }
+    daily.finished = true; lsSet(K_DAY, daily);
     var remain = countTomorrow();
     var pool = buildQueue();
     var capHit = pool.reviewPool > 0 || pool.newsPool > 0;
@@ -511,7 +523,7 @@
     document.querySelectorAll("#seg button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-view") === v); });
     $("#studyView").classList.toggle("hidden", v !== "study");
     $("#listView").classList.toggle("hidden", v !== "list");
-    if (v === "list") renderList(); else { session = buildQueue(); qi = 0; revealed = false; renderStudy(); }
+    if (v === "list") renderList(); else renderStudy();   // same session: switching tabs never re-deals cards
   }
   document.querySelectorAll("#seg button").forEach(function (b) {
     b.addEventListener("click", function () { switchView(b.getAttribute("data-view")); });
@@ -520,7 +532,12 @@
   // ---- settings sheet ----
   var mask = $("#mask");
   function openSheet() { syncSheet(); mask.classList.add("on"); }
-  function closeSheet() { mask.classList.remove("on"); saveSettings(); session = buildQueue(); qi = 0; revealed = false; renderStudy(); }
+  function closeSheet() {
+    mask.classList.remove("on"); saveSettings();
+    daily.finished = false; lsSet(K_DAY, daily);   // raising caps re-opens today's queue
+    goodDone = {}; session = buildQueue(); qi = 0; revealed = false; lastGraded = null;
+    renderStudy();
+  }
   function syncSheet() {
     document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
       var r = o.getAttribute("data-r"); var val = r === "null" ? null : parseInt(r, 10);
@@ -544,7 +561,9 @@
   $("#revCap").addEventListener("input", function () { settings.revCap = Math.max(0, parseInt(this.value || "0", 10) || 0); });
   $("#resetBtn").addEventListener("click", function () {
     if (!confirm("确定清空本机背诵进度？词表仍会保留，只是重新开始记忆曲线。")) return;
-    cards = {}; lsSet(K_CARD, {}); daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0 }; lsSet(K_DAY, daily);
+    cards = {}; lsSet(K_CARD, {});
+    Object.assign(daily, { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0, finished: false });
+    lsSet(K_DAY, daily);
     importSeedsNow(); closeSheet();
   });
   function importSeedsNow() { WORDS.forEach(function (w) { if (!cards[w.id]) cards[w.id] = F.fromSeed(w.seed, Date.now()); }); lsSet(K_CARD, cards); }
@@ -562,7 +581,9 @@
       var d = JSON.parse($("#xfer").value);
       if (!d || !d.cards || typeof d.cards !== "object") throw new Error("bad payload");
       cards = d.cards; lsSet(K_CARD, cards);
-      if (d.daily && d.daily.date === dayKey) { daily = d.daily; daily.done = daily.done || {}; lsSet(K_DAY, daily); }
+      if (d.daily && d.daily.date === dayKey) {
+        Object.assign(daily, d.daily); daily.done = daily.done || {}; lsSet(K_DAY, daily);
+      }
       importSeedsNow();
       session = buildQueue(); qi = 0; revealed = false; lastGraded = null;
       $("#xfer").value = "已导入 ✓ 共 " + Object.keys(cards).length + " 张卡片";
