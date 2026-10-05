@@ -282,38 +282,36 @@
   function kindOn(id) { var w = byId(id); return w && settings.kinds[w.kind]; }
   function isDue(card, t) { return card.state !== F.State.New && card.due <= t; }
 
-  // ---- build today's session queue honoring ratio + caps ----
+  // ---- build today's session queue: caps count the WHOLE day; reviews first ----
   function buildQueue() {
     var review = [], news = [];
     WORDS.forEach(function (w) {
       if (!settings.kinds[w.kind]) return;
       var c = cards[w.id]; if (!c) return;
-      if (daily.done[w.id]) return;               // once per day
+      if (daily.done[w.id]) return;                 // completed (认识/简单) today
       if (c.state === F.State.New) news.push(w);
       else if (isDue(c, now)) review.push(w);
     });
     review.sort(function (a, b) { return cards[a.id].due - cards[b.id].due || a.priority - b.priority; });
     news.sort(function (a, b) { return a.priority - b.priority || (b.learned_on || "").localeCompare(a.learned_on || ""); });
 
+    // Caps are day-total: remaining budget = cap - already completed today.
+    var doneRev = daily.reviewDone || 0, doneNew = daily.newDone || 0;
+    var remNew = Math.max(0, settings.newCap - doneNew);
+    var remRev = Math.max(0, settings.revCap - doneRev);
     var nNew, nRev;
-    if (settings.ratio === null) { nNew = 0; nRev = Math.min(review.length, settings.revCap); }
-    else if (settings.ratio === 0) { nRev = 0; nNew = Math.min(news.length, settings.newCap); }
-    else { nNew = Math.min(news.length, settings.newCap); nRev = Math.min(review.length, settings.newCap * settings.ratio, settings.revCap); }
-    var rev = review.slice(0, nRev), nw = news.slice(0, nNew);
-
-    var queue = [], ri = 0, ni = 0, r = settings.ratio || 0;
-    while (ri < rev.length || ni < nw.length) {
-      if (r > 0) {
-        var take = r;
-        while (take-- > 0 && ri < rev.length) queue.push({ id: rev[ri++].id, type: "review" });
-        if (ni < nw.length) queue.push({ id: nw[ni++].id, type: "new" });
-      } else if (settings.ratio === null) {
-        queue.push({ id: rev[ri++].id, type: "review" });
-      } else { // 纯新词
-        queue.push({ id: nw[ni++].id, type: "new" });
-      }
+    if (settings.ratio === null) { nNew = 0; nRev = Math.min(review.length, remRev); }
+    else if (settings.ratio === 0) { nRev = 0; nNew = Math.min(news.length, remNew); }
+    else {
+      nNew = Math.min(news.length, remNew);
+      var ratioBudget = Math.max(0, settings.newCap * settings.ratio - doneRev);
+      nRev = Math.min(review.length, remRev, ratioBudget);
     }
-    return { queue: queue, reviewTotal: rev.length, newTotal: nw.length };
+    var queue = [];
+    review.slice(0, nRev).forEach(function (w) { queue.push({ id: w.id, type: "review" }); });
+    news.slice(0, nNew).forEach(function (w) { queue.push({ id: w.id, type: "new" }); });
+    return { queue: queue, reviewTarget: doneRev + nRev, newTarget: doneNew + nNew,
+             reviewLeft: nRev, newLeft: nNew, reviewPool: review.length, newsPool: news.length };
   }
 
   var session = buildQueue();
@@ -338,14 +336,13 @@
   }
 
   function updateStats() {
-    var total = session.queue.length;
-    var done = Object.keys(daily.done).filter(function (id) { return kindOn(id); }).length;
-    $("#sReview").innerHTML = (daily.reviewDone) + "<em>/" + session.reviewTotal + "</em>";
-    $("#sNew").innerHTML = (daily.newDone) + "<em>/" + session.newTotal + "</em>";
+    $("#sReview").innerHTML = (daily.reviewDone) + "<em>/" + session.reviewTarget + "</em>";
+    $("#sNew").innerHTML = (daily.newDone) + "<em>/" + session.newTarget + "</em>";
     var secs = daily.seconds + (timerStart ? Math.floor((Date.now() - timerStart) / 1000) : 0);
     var mins = Math.floor(secs / 60);
     $("#sTime").innerHTML = (mins > 0 ? mins : secs) + "<em>" + (mins > 0 ? "min" : "s") + "</em>";
-    var pct = total ? Math.min(100, Math.round(done / total * 100)) : (done > 0 ? 100 : 0);
+    var total = session.queue.length;
+    var pct = total ? Math.min(100, Math.round(qi / total * 100)) : 100;
     $("#bar").style.width = pct + "%";
   }
 
@@ -409,10 +406,16 @@
     var item = session.queue[qi]; var w = byId(item.id);
     var before = cards[w.id]; var wasNew = before.state === F.State.New;
     var next = F.grade(before, rating, now);
-    lastGraded = { id: w.id, prev: before, wasNew: wasNew, type: item.type };
+    // 扇贝式：不认识/模糊 本场稍后再考，直到认识才结算；认识/简单 记为今日完成。
+    var completed = (rating === F.Rating.Good || rating === F.Rating.Easy);
+    lastGraded = { id: w.id, prev: before, wasNew: wasNew, type: item.type, completed: completed };
     cards[w.id] = next; lsSet(K_CARD, cards);
-    daily.done[w.id] = true;
-    if (wasNew) daily.newDone++; else daily.reviewDone++;
+    if (completed) {
+      daily.done[w.id] = true;
+      if (wasNew) daily.newDone++; else daily.reviewDone++;
+    } else {
+      session.queue.push({ id: w.id, type: item.type, repeat: true });
+    }
     daily.seconds += Math.floor((Date.now() - (timerStart || Date.now())) / 1000); timerStart = Date.now();
     lsSet(K_DAY, daily);
     qi++; revealed = false;
@@ -423,8 +426,14 @@
     if (!lastGraded) return;
     var g = lastGraded;
     cards[g.id] = g.prev; lsSet(K_CARD, cards);
-    delete daily.done[g.id];
-    if (g.wasNew) daily.newDone = Math.max(0, daily.newDone - 1); else daily.reviewDone = Math.max(0, daily.reviewDone - 1);
+    if (g.completed) {
+      delete daily.done[g.id];
+      if (g.wasNew) daily.newDone = Math.max(0, daily.newDone - 1); else daily.reviewDone = Math.max(0, daily.reviewDone - 1);
+    } else {
+      for (var i = session.queue.length - 1; i >= qi; i--) {
+        if (session.queue[i] && session.queue[i].id === g.id) { session.queue.splice(i, 1); break; }
+      }
+    }
     lsSet(K_DAY, daily);
     qi = Math.max(0, qi - 1); revealed = false; lastGraded = null;
     renderStudy();
@@ -433,13 +442,16 @@
   function renderDone() {
     if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = null; lsSet(K_DAY, daily); }
     var remain = countTomorrow();
-    studyView.innerHTML = '<div class="done"><div class="big">🎉</div><h3>今日任务已完成</h3>' +
+    var pool = buildQueue();
+    var capHit = pool.reviewPool > 0 || pool.newsPool > 0;
+    var note = capHit
+      ? "已达今日上限，剩余卡片明天到期继续（约 " + (pool.reviewPool + pool.newsPool) + " 张）。"
+      : "今日全部到期卡片已清空。";
+    studyView.innerHTML = '<div class="done"><div class="big">🎉</div><h3>今日已完成</h3>' +
       '<p>复习 ' + daily.reviewDone + ' 个 · 新词 ' + daily.newDone + ' 个</p>' +
-      '<p style="margin-top:6px">明天约 ' + remain + ' 张到期，届时打开即可继续。</p>' +
-      '<div class="row"><button class="ghost-btn" id="goList">去词本浏览</button>' +
-      '<button class="ghost-btn" id="moreStudy">再背几个</button></div></div>';
+      '<p style="margin-top:6px">' + note + ' 明天约 ' + remain + ' 张到期。</p>' +
+      '<div class="row"><button class="ghost-btn" id="goList">去词本浏览</button></div></div>';
     $("#goList").addEventListener("click", function () { switchView("list"); });
-    $("#moreStudy").addEventListener("click", function () { session = buildQueue(); qi = 0; revealed = false; renderStudy(); });
     updateStats();
   }
 
@@ -577,6 +589,12 @@
 
   // live timer tick
   setInterval(function () { if (timerStart) updateStats(); }, 1000);
+
+  // test hook (settings is mutated in place; session/daily read live via getters)
+  window.__vocabDebug = {
+    settings: settings, daily: daily, cards: cards, buildQueue: buildQueue,
+    session: function () { return session; }, qi: function () { return qi; },
+  };
 
   switchView("study");
 })();
