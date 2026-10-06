@@ -158,8 +158,8 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="k">今日复习</div><div class="v" id="sReview">0<em>/0</em></div></div>
-    <div class="stat"><div class="k">今日新词</div><div class="v" id="sNew">0<em>/0</em></div></div>
+    <div class="stat"><div class="k">今日已背</div><div class="v" id="sDone">0<em>/40</em></div></div>
+    <div class="stat"><div class="k">今日剩余</div><div class="v" id="sLeft">0</div></div>
     <div class="stat"><div class="k">学习时间</div><div class="v" id="sTime">0<em>min</em></div></div>
   </div>
   <div class="progress"><i id="bar"></i></div>
@@ -191,24 +191,15 @@
     <div class="sub">记忆曲线在本机浏览器计算与保存，不上传；项目端只负责追加新词。</div>
 
     <div class="field">
-      <label>复习 : 新词 比例<span class="desc">每背 1 个新词，搭配多少张到期复习</span></label>
-      <div class="opts" id="ratioOpts">
-        <div class="opt" data-r="0">纯新词</div>
-        <div class="opt" data-r="1">1 : 1</div>
-        <div class="opt" data-r="2">2 : 1</div>
-        <div class="opt" data-r="3">3 : 1</div>
-        <div class="opt" data-r="4">4 : 1</div>
-        <div class="opt" data-r="null">纯复习</div>
+      <label>每日学习量<span class="desc">到期复习在前、新词在后，合计这个张数即止</span></label>
+      <div class="opts" id="dailyOpts">
+        <div class="opt" data-d="20">20</div>
+        <div class="opt" data-d="40">40</div>
+        <div class="opt" data-d="60">60</div>
+        <div class="opt" data-d="80">80</div>
+        <div class="opt" data-d="120">120</div>
       </div>
-    </div>
-
-    <div class="field">
-      <label>每日新词上限</label>
-      <input class="num" type="number" id="newCap" min="0" max="200" />
-    </div>
-    <div class="field">
-      <label>每日复习上限</label>
-      <input class="num" type="number" id="revCap" min="0" max="600" />
+      <div style="margin-top:8px">自定义 <input class="num" type="number" id="dailyCap" min="1" max="600" /> 张/天</div>
     </div>
 
     <div class="field">
@@ -253,8 +244,9 @@
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { mem[k] = v; } }
   var K_CARD = "ky.vocab.cards.v1", K_SET = "ky.vocab.settings.v1", K_DAY = "ky.vocab.daily.v1";
 
-  var DEFAULTS = { ratio: 3, newCap: 20, revCap: 150, kinds: { word: true, phrase: true, sentence_pattern: true } };
+  var DEFAULTS = { daily: 40, kinds: { word: true, phrase: true, sentence_pattern: true } };
   var settings = Object.assign({}, DEFAULTS, lsGet(K_SET) || {});
+  if (!settings.daily || settings.daily < 1) settings.daily = 40;   // migrate old ratio/caps layouts
   settings.kinds = Object.assign({}, DEFAULTS.kinds, settings.kinds || {});
 
   var cards = lsGet(K_CARD) || {};   // id -> fsrs card
@@ -262,7 +254,7 @@
   var dayKey = localDay(now);
 
   var daily = lsGet(K_DAY) || {};
-  if (daily.date !== dayKey) { daily = { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0, finished: false }; lsSet(K_DAY, daily); }
+  if (daily.date !== dayKey) { daily = { date: dayKey, done: {}, seconds: 0, finished: false }; lsSet(K_DAY, daily); }
   daily.done = daily.done || {};
   daily.finished = !!daily.finished;   // sticky until the next local day or a settings change
 
@@ -296,23 +288,15 @@
     review.sort(function (a, b) { return cards[a.id].due - cards[b.id].due || a.priority - b.priority; });
     news.sort(function (a, b) { return a.priority - b.priority || (b.learned_on || "").localeCompare(a.learned_on || ""); });
 
-    // Caps are day-total: remaining budget = cap - already completed today.
-    var doneRev = daily.reviewDone || 0, doneNew = daily.newDone || 0;
-    var remNew = Math.max(0, settings.newCap - doneNew);
-    var remRev = Math.max(0, settings.revCap - doneRev);
-    var nNew, nRev;
-    if (settings.ratio === null) { nNew = 0; nRev = Math.min(review.length, remRev); }
-    else if (settings.ratio === 0) { nRev = 0; nNew = Math.min(news.length, remNew); }
-    else {
-      nNew = Math.min(news.length, remNew);
-      var ratioBudget = Math.max(0, settings.newCap * settings.ratio - doneRev);
-      nRev = Math.min(review.length, remRev, ratioBudget);
-    }
+    // One day-total budget: 每日学习量 张，到期复习在前、新词在后，背满即止。
+    var doneToday = Object.keys(daily.done).length;
+    var budget = Math.max(0, (settings.daily || 40) - doneToday);
     var queue = [];
-    review.slice(0, nRev).forEach(function (w) { queue.push({ id: w.id, type: "review" }); });
-    news.slice(0, nNew).forEach(function (w) { queue.push({ id: w.id, type: "new" }); });
-    return { queue: queue, reviewTarget: doneRev + nRev, newTarget: doneNew + nNew,
-             reviewLeft: nRev, newLeft: nNew, reviewPool: review.length, newsPool: news.length };
+    var takeRev = Math.min(review.length, budget);
+    review.slice(0, takeRev).forEach(function (w) { queue.push({ id: w.id, type: "review" }); });
+    news.slice(0, budget - takeRev).forEach(function (w) { queue.push({ id: w.id, type: "new" }); });
+    return { queue: queue, doneToday: doneToday, target: doneToday + queue.length,
+             poolLeft: Math.max(0, review.length + news.length - budget) };
   }
 
   var session = buildQueue();
@@ -338,8 +322,10 @@
   }
 
   function updateStats() {
-    $("#sReview").innerHTML = (daily.reviewDone) + "<em>/" + session.reviewTarget + "</em>";
-    $("#sNew").innerHTML = (daily.newDone) + "<em>/" + session.newTarget + "</em>";
+    var done = Object.keys(daily.done).length;
+    $("#sDone").innerHTML = done + "<em>/" + (settings.daily || 40) + "</em>";
+    var left = Math.max(0, session.queue.length - qi);
+    $("#sLeft").textContent = left + (session.poolLeft > 0 ? "+" : "");
     var secs = daily.seconds + (timerStart ? Math.floor((Date.now() - timerStart) / 1000) : 0);
     var mins = Math.floor(secs / 60);
     $("#sTime").innerHTML = (mins > 0 ? mins : secs) + "<em>" + (mins > 0 ? "min" : "s") + "</em>";
@@ -410,15 +396,12 @@
   // Easy  -> done for the session. FSRS still records every grade for the long curve.
   function grade(rating) {
     var item = session.queue[qi]; var w = byId(item.id);
-    var before = cards[w.id]; var wasNew = before.state === F.State.New;
+    var before = cards[w.id];
     var next = F.grade(before, rating, now);
     cards[w.id] = next; lsSet(K_CARD, cards);
     var completed = (rating === F.Rating.Good || rating === F.Rating.Easy);
     var incremented = false;
-    if (completed && !daily.done[w.id]) {
-      daily.done[w.id] = true; incremented = true;
-      if (wasNew) daily.newDone++; else daily.reviewDone++;
-    }
+    if (completed && !daily.done[w.id]) { daily.done[w.id] = true; incremented = true; }
     var entry = null;
     var gap = rating === F.Rating.Again ? 4 : rating === F.Rating.Hard ? 8
             : (rating === F.Rating.Good && !goodDone[w.id]) ? (goodDone[w.id] = true, 12) : 0;
@@ -427,7 +410,7 @@
       entry = { id: w.id, type: item.type, repeat: true };
       session.queue.splice(at, 0, entry);
     }
-    lastGraded = { id: w.id, prev: before, wasNew: wasNew, completed: completed,
+    lastGraded = { id: w.id, prev: before, completed: completed,
                    incremented: incremented, entry: entry };
     daily.seconds += Math.floor((Date.now() - (timerStart || Date.now())) / 1000); timerStart = Date.now();
     lsSet(K_DAY, daily);
@@ -439,10 +422,7 @@
     if (!lastGraded) return;
     var g = lastGraded;
     cards[g.id] = g.prev; lsSet(K_CARD, cards);
-    if (g.incremented) {
-      delete daily.done[g.id];
-      if (g.wasNew) daily.newDone = Math.max(0, daily.newDone - 1); else daily.reviewDone = Math.max(0, daily.reviewDone - 1);
-    }
+    if (g.incremented) delete daily.done[g.id];
     if (g.entry) { var idx = session.queue.indexOf(g.entry); if (idx >= 0) session.queue.splice(idx, 1); }
     if (g.completed) delete goodDone[g.id];
     lsSet(K_DAY, daily);
@@ -455,12 +435,11 @@
     daily.finished = true; lsSet(K_DAY, daily);
     var remain = countTomorrow();
     var pool = buildQueue();
-    var capHit = pool.reviewPool > 0 || pool.newsPool > 0;
-    var note = capHit
-      ? "已达今日上限，剩余卡片明天到期继续（约 " + (pool.reviewPool + pool.newsPool) + " 张）。"
-      : "今日全部到期卡片已清空。";
+    var note = pool.poolLeft > 0
+      ? "还有 " + pool.poolLeft + " 张因今日到达上限顺延，明天继续。"
+      : "今日到期卡片已全部背完。";
     studyView.innerHTML = '<div class="done"><div class="big">🎉</div><h3>今日已完成</h3>' +
-      '<p>复习 ' + daily.reviewDone + ' 个 · 新词 ' + daily.newDone + ' 个</p>' +
+      '<p>今日已背 ' + Object.keys(daily.done).length + ' 张</p>' +
       '<p style="margin-top:6px">' + note + ' 明天约 ' + remain + ' 张到期。</p>' +
       '<div class="row"><button class="ghost-btn" id="goList">去词本浏览</button></div></div>';
     $("#goList").addEventListener("click", function () { switchView("list"); });
@@ -539,30 +518,31 @@
     renderStudy();
   }
   function syncSheet() {
-    document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
-      var r = o.getAttribute("data-r"); var val = r === "null" ? null : parseInt(r, 10);
-      o.classList.toggle("on", settings.ratio === val);
+    document.querySelectorAll("#dailyOpts .opt").forEach(function (o) {
+      o.classList.toggle("on", settings.daily === parseInt(o.getAttribute("data-d"), 10));
     });
     document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
       o.classList.toggle("on", !!settings.kinds[o.getAttribute("data-k")]);
     });
-    $("#newCap").value = settings.newCap; $("#revCap").value = settings.revCap;
+    $("#dailyCap").value = settings.daily;
   }
   $("#gear").addEventListener("click", openSheet);
   $("#closeSheet").addEventListener("click", closeSheet);
   mask.addEventListener("click", function (e) { if (e.target === mask) closeSheet(); });
-  document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
-    o.addEventListener("click", function () { var r = o.getAttribute("data-r"); settings.ratio = r === "null" ? null : parseInt(r, 10); syncSheet(); });
+  document.querySelectorAll("#dailyOpts .opt").forEach(function (o) {
+    o.addEventListener("click", function () { settings.daily = parseInt(o.getAttribute("data-d"), 10) || 40; syncSheet(); });
   });
   document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
     o.addEventListener("click", function () { var k = o.getAttribute("data-k"); settings.kinds[k] = !settings.kinds[k]; syncSheet(); });
   });
-  $("#newCap").addEventListener("input", function () { settings.newCap = Math.max(0, parseInt(this.value || "0", 10) || 0); });
-  $("#revCap").addEventListener("input", function () { settings.revCap = Math.max(0, parseInt(this.value || "0", 10) || 0); });
+  $("#dailyCap").addEventListener("input", function () {
+    var v = parseInt(this.value || "0", 10) || 0;
+    if (v > 0) { settings.daily = v; syncSheet(); }
+  });
   $("#resetBtn").addEventListener("click", function () {
     if (!confirm("确定清空本机背诵进度？词表仍会保留，只是重新开始记忆曲线。")) return;
     cards = {}; lsSet(K_CARD, {});
-    Object.assign(daily, { date: dayKey, reviewDone: 0, newDone: 0, done: {}, seconds: 0, finished: false });
+    Object.assign(daily, { date: dayKey, done: {}, seconds: 0, finished: false });
     lsSet(K_DAY, daily);
     importSeedsNow(); closeSheet();
   });
