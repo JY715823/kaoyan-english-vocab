@@ -236,6 +236,7 @@
       <div class="row2">
         <button class="ghost-btn small" id="expBtn">导出进度</button>
         <button class="ghost-btn small" id="impBtn">导入进度</button>
+        <span id="xferTip" style="align-self:center;font-size:.72rem;color:var(--muted)"></span>
       </div>
     </div>
 
@@ -631,12 +632,27 @@
   function importSeedsNow() { WORDS.forEach(function (w) { if (!cards[w.id]) cards[w.id] = F.fromSeed(w.seed, Date.now()); }); lsSet(K_CARD, cards); }
 
   // progress transfer (origin migration)
+  function copyText(text, done) {
+    function legacy() {
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        var okk = document.execCommand("copy");
+        document.body.removeChild(ta); return okk;
+      } catch (e) { return false; }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(legacy()); });
+    } else { done(legacy()); }
+  }
   $("#expBtn").addEventListener("click", function () {
     if (timerStart) { daily.seconds += Math.floor((Date.now() - timerStart) / 1000); timerStart = Date.now(); lsSet(K_DAY, daily); }
     var box = $("#xfer");
     box.value = JSON.stringify({ v: 1, exported_at: new Date().toISOString(), cards: cards, daily: daily });
-    box.select();
-    try { document.execCommand("copy"); } catch (e) {}
+    copyText(box.value, function (okk) {
+      $("#xferTip").textContent = okk ? "已复制 ✓ 粘贴发给助手即可" : "未自动复制，请长按文本框全选复制";
+    });
   });
   $("#impBtn").addEventListener("click", function () {
     try {
