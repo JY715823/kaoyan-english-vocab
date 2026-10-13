@@ -292,9 +292,17 @@
     return startOfToday() + ((isNaN(h) ? 0 : h) % SPREAD_DAYS) * DAY;
   }
   function untouchedSeed(c) {
-    return !!c && c.state === F.State.Learning && c.reps === 1 && !c.last_review &&
+    return !!c && c.reps === 1 && !c.last_review &&
            Math.abs((c.stability || 0) - 0.4) < 1e-6;
   }
+  // The previous build stamped an untouched seed's last_review with its own due,
+  // so recognise that shape too and clear it (otherwise those cards still look
+  // "recently touched" to the rotation sort).
+  function legacySeed(c) {
+    return !!c && (c.reps || 0) <= 1 && Math.abs((c.stability || 0) - 0.4) < 1e-6 &&
+           Math.abs((c.difficulty || 0) - 6.81) < 1e-6 && c.last_review && c.last_review === c.due;
+  }
+  function spreadable(c) { return untouchedSeed(c) || legacySeed(c); }
   (function importSeeds() {
     var changed = false;
     WORDS.forEach(function (w) {
@@ -306,7 +314,9 @@
     });
     if (!lsGet(K_MIG)) {                       // one-time repair of old seeds
       Object.keys(cards).forEach(function (id) {
-        if (untouchedSeed(cards[id])) { cards[id].due = spreadDue(id); changed = true; }
+        if (spreadable(cards[id])) {
+          cards[id].due = spreadDue(id); cards[id].last_review = null; changed = true;
+        }
       });
       lsSet(K_MIG, dayKey);
     }
@@ -693,6 +703,7 @@
   window.__vocabDebug = {
     settings: settings, daily: daily, cards: cards, buildQueue: buildQueue,
     session: function () { return session; }, qi: function () { return qi; },
+    spreadable: spreadable, spreadDue: spreadDue,
   };
 
   switchView("study");
