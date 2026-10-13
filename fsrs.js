@@ -172,7 +172,7 @@
       state: seed.state === "Learning" ? State.Learning :
              seed.state === "Review" ? State.Review :
              seed.state === "Relearning" ? State.Relearning : State.New,
-      last_review: seed.last_review ? Date.parse(seed.last_review) : (seed.due ? due : null),
+      last_review: seed.last_review ? Date.parse(seed.last_review) : null,
     };
   }
 

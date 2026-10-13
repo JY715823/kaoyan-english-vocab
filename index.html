@@ -64,6 +64,11 @@
   .badge.tier-forgotten { background: #fdece6; color: var(--tier-forgotten); }
   .badge.tier-vague { background: #fbf1de; color: #b9791a; }
   .badge.tier-solid { background: #e6f5ec; color: var(--tier-solid); }
+  .badge.m-new { background: #eef1f4; color: #64757a; }
+  .badge.m-learn { background: #fdece6; color: var(--tier-forgotten); }
+  .badge.m-rev { background: #fbf1de; color: #b9791a; }
+  .badge.m-solid { background: #e6f5ec; color: var(--tier-solid); }
+  .badge.orig { background: none; color: var(--muted); font-weight: 600; padding-left: 0; }
   .badge.art { background: #eef1f4; color: #7b8794; font-weight: 600; }
   .term { font-size: 2.05rem; font-weight: 800; color: var(--ink); line-height: 1.22; word-break: break-word;
     margin: 6px 0 2px; }
@@ -159,7 +164,7 @@
 
   <div class="stats">
     <div class="stat"><div class="k">今日已背</div><div class="v" id="sDone">0<em>/40</em></div></div>
-    <div class="stat"><div class="k">今日剩余</div><div class="v" id="sLeft">0</div></div>
+    <div class="stat"><div class="k">复习 · 新词</div><div class="v" id="sSplit" style="font-size:.98rem">0/30 · 0/10</div></div>
     <div class="stat"><div class="k">学习时间</div><div class="v" id="sTime">0<em>min</em></div></div>
   </div>
   <div class="progress"><i id="bar"></i></div>
@@ -191,7 +196,19 @@
     <div class="sub">记忆曲线在本机浏览器计算与保存，不上传；项目端只负责追加新词。</div>
 
     <div class="field">
-      <label>每日学习量<span class="desc">到期复习在前、新词在后，合计这个张数即止</span></label>
+      <label>复习 : 新词<span class="desc">复习=背过的卡，新词=从未出现的卡</span></label>
+      <div class="opts" id="ratioOpts">
+        <div class="opt" data-r="0">纯新词</div>
+        <div class="opt" data-r="1">1 : 1</div>
+        <div class="opt" data-r="2">2 : 1</div>
+        <div class="opt" data-r="3">3 : 1</div>
+        <div class="opt" data-r="4">4 : 1</div>
+        <div class="opt" data-r="null">纯复习</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>每日学习量<span class="desc">按上面配比取卡，背满即锁定到明天</span></label>
       <div class="opts" id="dailyOpts">
         <div class="opt" data-d="20">20</div>
         <div class="opt" data-d="40">40</div>
@@ -242,11 +259,13 @@
   var mem = {};
   function lsGet(k) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return k in mem ? mem[k] : null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { mem[k] = v; } }
-  var K_CARD = "ky.vocab.cards.v1", K_SET = "ky.vocab.settings.v1", K_DAY = "ky.vocab.daily.v1";
+  var K_CARD = "ky.vocab.cards.v1", K_SET = "ky.vocab.settings.v1", K_DAY = "ky.vocab.daily.v1",
+      K_MIG = "ky.vocab.spreadMig.v1";
 
-  var DEFAULTS = { daily: 40, kinds: { word: true, phrase: true, sentence_pattern: true } };
+  var DEFAULTS = { daily: 40, ratio: 3, kinds: { word: true, phrase: true, sentence_pattern: true } };
   var settings = Object.assign({}, DEFAULTS, lsGet(K_SET) || {});
-  if (!settings.daily || settings.daily < 1) settings.daily = 40;   // migrate old ratio/caps layouts
+  if (!settings.daily || settings.daily < 1) settings.daily = 40;
+  if (settings.ratio === undefined) settings.ratio = 3;
   settings.kinds = Object.assign({}, DEFAULTS.kinds, settings.kinds || {});
 
   var cards = lsGet(K_CARD) || {};   // id -> fsrs card
@@ -262,12 +281,34 @@
   function pad(n) { return (n < 10 ? "0" : "") + n; }
   function saveSettings() { lsSet(K_SET, settings); }
 
-  // ---- import seeds for any word not yet tracked ----
+  // ---- seed import + backlog spread: 忘光 cards enter on a rotating schedule
+  // instead of all sharing one due timestamp (which made the same head of the
+  // list win every day and starved new words out entirely). ----
+  var SPREAD_DAYS = 14;
+  function startOfToday() { var d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  function spreadDue(id) {
+    var h = parseInt(String(id).slice(2, 10), 16);
+    return startOfToday() + ((isNaN(h) ? 0 : h) % SPREAD_DAYS) * DAY;
+  }
+  function untouchedSeed(c) {
+    return !!c && c.state === F.State.Learning && c.reps === 1 && !c.last_review &&
+           Math.abs((c.stability || 0) - 0.4) < 1e-6;
+  }
   (function importSeeds() {
     var changed = false;
     WORDS.forEach(function (w) {
-      if (!cards[w.id]) { cards[w.id] = F.fromSeed(w.seed, now); changed = true; }
+      if (!cards[w.id]) {
+        var c = F.fromSeed(w.seed, now);
+        if (untouchedSeed(c)) c.due = spreadDue(w.id);
+        cards[w.id] = c; changed = true;
+      }
     });
+    if (!lsGet(K_MIG)) {                       // one-time repair of old seeds
+      Object.keys(cards).forEach(function (id) {
+        if (untouchedSeed(cards[id])) { cards[id].due = spreadDue(id); changed = true; }
+      });
+      lsSet(K_MIG, dayKey);
+    }
     if (changed) lsSet(K_CARD, cards);
   })();
 
@@ -285,18 +326,36 @@
       if (c.state === F.State.New) news.push(w);
       else if (isDue(c, now)) review.push(w);
     });
-    review.sort(function (a, b) { return cards[a.id].due - cards[b.id].due || a.priority - b.priority; });
-    news.sort(function (a, b) { return a.priority - b.priority || (b.learned_on || "").localeCompare(a.learned_on || ""); });
+    // 复习池 = 真背过的卡（点过任意评分）；新词池 = 从未出现过的卡。
+    var touched = function (id) { return cards[id].last_review || 0; };
+    review.sort(function (a, b) {
+      return cards[a.id].due - cards[b.id].due
+          || touched(a.id) - touched(b.id)                       // least recently touched first
+          || (b.learned_on || "").localeCompare(a.learned_on || "") // then the newest additions
+          || String(a.id).localeCompare(String(b.id));
+    });
+    news.sort(function (a, b) {
+      return a.priority - b.priority || (b.learned_on || "").localeCompare(a.learned_on || "")
+          || String(a.id).localeCompare(String(b.id));
+    });
 
-    // One day-total budget: 每日学习量 张，到期复习在前、新词在后，背满即止。
     var doneToday = Object.keys(daily.done).length;
-    var budget = Math.max(0, (settings.daily || 40) - doneToday);
+    var total = Math.max(0, (settings.daily || 40) - doneToday);   // day-total cap, all day
+    var wantRev, wantNew;
+    if (settings.ratio === null) { wantRev = total; wantNew = 0; }
+    else if (settings.ratio === 0) { wantRev = 0; wantNew = total; }
+    else { wantNew = Math.round(total / (settings.ratio + 1)); wantRev = total - wantNew; }
+    var gotRev = Math.min(review.length, wantRev), gotNew = Math.min(news.length, wantNew);
+    var slack = Math.max(0, total - gotRev - gotNew);              // short pool -> give the rest away
+    var extraRev = Math.min(Math.max(0, review.length - gotRev), slack);
+    gotRev += extraRev;
+    gotNew += Math.min(Math.max(0, news.length - gotNew), slack - extraRev);
     var queue = [];
-    var takeRev = Math.min(review.length, budget);
-    review.slice(0, takeRev).forEach(function (w) { queue.push({ id: w.id, type: "review" }); });
-    news.slice(0, budget - takeRev).forEach(function (w) { queue.push({ id: w.id, type: "new" }); });
-    return { queue: queue, doneToday: doneToday, target: doneToday + queue.length,
-             poolLeft: Math.max(0, review.length + news.length - budget) };
+    review.slice(0, gotRev).forEach(function (w) { queue.push({ id: w.id, type: "review" }); });
+    news.slice(0, gotNew).forEach(function (w) { queue.push({ id: w.id, type: "new" }); });
+    return { queue: queue, doneToday: doneToday, wantRev: wantRev, wantNew: wantNew,
+             gotRev: gotRev, gotNew: gotNew,
+             poolLeft: Math.max(0, review.length + news.length - queue.length) };
   }
 
   var session = buildQueue();
@@ -322,10 +381,11 @@
   }
 
   function updateStats() {
-    var done = Object.keys(daily.done).length;
-    $("#sDone").innerHTML = done + "<em>/" + (settings.daily || 40) + "</em>";
-    var left = Math.max(0, session.queue.length - qi);
-    $("#sLeft").textContent = left + (session.poolLeft > 0 ? "+" : "");
+    var vals = Object.keys(daily.done).map(function (k) { return daily.done[k]; });
+    var a = vals.filter(function (v) { return v === "new"; }).length;
+    var b = vals.length - a;
+    $("#sDone").innerHTML = vals.length + "<em>/" + (settings.daily || 40) + "</em>";
+    $("#sSplit").textContent = b + "/" + session.wantRev + " · " + a + "/" + session.wantNew;
     var secs = daily.seconds + (timerStart ? Math.floor((Date.now() - timerStart) / 1000) : 0);
     var mins = Math.floor(secs / 60);
     $("#sTime").innerHTML = (mins > 0 ? mins : secs) + "<em>" + (mins > 0 ? "min" : "s") + "</em>";
@@ -345,7 +405,7 @@
         (lastGraded ? '<button class="undo" id="undo">撤销</button>' : '') +
         '<div class="badges">' +
           '<span class="badge kind">' + KIND_LABEL[w.kind] + '</span>' +
-          '<span class="badge tier-' + w.tier + '">' + w.tier_label + '</span>' +
+          '<span class="badge ' + mastery(w.id).cls + '">' + mastery(w.id).t + '</span>' +
           (w.articles && w.articles[0] ? '<span class="badge art">' + esc(shortArt(w.articles[0])) + '</span>' : '') +
         '</div>' +
         '<div class="' + termClass + '">' + esc(w.term) + '</div>' +
@@ -401,7 +461,7 @@
     cards[w.id] = next; lsSet(K_CARD, cards);
     var completed = (rating === F.Rating.Good || rating === F.Rating.Easy);
     var incremented = false;
-    if (completed && !daily.done[w.id]) { daily.done[w.id] = true; incremented = true; }
+    if (completed && !daily.done[w.id]) { daily.done[w.id] = item.type; incremented = true; }
     var entry = null;
     var gap = rating === F.Rating.Again ? 4 : rating === F.Rating.Hard ? 8
             : (rating === F.Rating.Good && !goodDone[w.id]) ? (goodDone[w.id] = true, 12) : 0;
@@ -454,6 +514,16 @@
 
   function shortArt(a) { return a.length > 18 ? a.slice(0, 18) + "…" : a; }
 
+  // Live mastery comes from the browser-side FSRS card, not from the static
+  // closeout evidence tier (which can never change without data flowing back).
+  function mastery(id) {
+    var c = cards[id];
+    if (!c || c.state === F.State.New) return { t: "新词", cls: "m-new" };
+    if (c.state === F.State.Learning || c.state === F.State.Relearning) return { t: "学习中", cls: "m-learn" };
+    if ((c.scheduled_days || 0) >= 21) return { t: "熟练", cls: "m-solid" };
+    return { t: "复习", cls: "m-rev" };
+  }
+
   // ---- list view ----
   var listEl = $("#list");
   function renderList() {
@@ -487,9 +557,10 @@
           else nextTxt = "下次 " + (d.getMonth() + 1) + "/" + d.getDate();
         }
         html += '<div class="lcard"><div class="top"><span class="t">' + esc(w.term) + '</span>' +
-          '<span class="badge tier-' + w.tier + '">' + w.tier_label + '</span></div>' +
+          '<span class="badge ' + mastery(w.id).cls + '">' + mastery(w.id).t + '</span></div>' +
           '<div class="m' + (hideM ? " masked" : "") + '">' + (hideM ? "••••••" : esc(w.meaning || "暂无释义")) + '</div>' +
           '<div class="foot"><span class="badge kind">' + KIND_LABEL[w.kind] + '</span>' +
+          '<span class="badge orig">初始:' + w.tier_label + '</span>' +
           '<span class="next' + dueCls + '">' + nextTxt + '</span></div></div>';
       });
     });
@@ -521,6 +592,10 @@
     document.querySelectorAll("#dailyOpts .opt").forEach(function (o) {
       o.classList.toggle("on", settings.daily === parseInt(o.getAttribute("data-d"), 10));
     });
+    document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
+      var r = o.getAttribute("data-r");
+      o.classList.toggle("on", settings.ratio === (r === "null" ? null : parseInt(r, 10)));
+    });
     document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
       o.classList.toggle("on", !!settings.kinds[o.getAttribute("data-k")]);
     });
@@ -531,6 +606,13 @@
   mask.addEventListener("click", function (e) { if (e.target === mask) closeSheet(); });
   document.querySelectorAll("#dailyOpts .opt").forEach(function (o) {
     o.addEventListener("click", function () { settings.daily = parseInt(o.getAttribute("data-d"), 10) || 40; syncSheet(); });
+  });
+  document.querySelectorAll("#ratioOpts .opt").forEach(function (o) {
+    o.addEventListener("click", function () {
+      var r = o.getAttribute("data-r");
+      settings.ratio = r === "null" ? null : parseInt(r, 10);
+      syncSheet();
+    });
   });
   document.querySelectorAll("#kindOpts .opt").forEach(function (o) {
     o.addEventListener("click", function () { var k = o.getAttribute("data-k"); settings.kinds[k] = !settings.kinds[k]; syncSheet(); });
